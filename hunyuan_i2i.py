@@ -6,7 +6,14 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from run_pipeline import extract_json, log, run_hunyuan_edit, save_json
+from run_pipeline import (
+    HUNYUAN_MODEL,
+    build_device_map,
+    extract_json,
+    log,
+    run_hunyuan_edit,
+    save_json,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -21,10 +28,8 @@ def parse_args() -> argparse.Namespace:
         help="editing_prompts.json from LLM step",
     )
     parser.add_argument("--out-dir", type=Path, default=Path("./edits_out"))
-    parser.add_argument(
-        "--hunyuan-model",
-        default="/hdd/sy/models/HunyuanImage-3-Instruct",
-    )
+    parser.add_argument("--hunyuan-model", default=HUNYUAN_MODEL)
+    parser.add_argument("--gpu", type=int, default=0, help="GPU index (default: 0). -1 for auto.")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--diff-infer-steps", type=int, default=50)
     parser.add_argument("--moe-impl", choices=["eager", "flashinfer"], default="eager")
@@ -60,6 +65,7 @@ def main() -> None:
         diff_infer_steps=args.diff_infer_steps,
         moe_impl=args.moe_impl,
         chain_mode=args.chain_mode,
+        device_map=build_device_map(args.gpu),
     )
 
     log(f"Edited {len(manifest)} steps. Outputs in {out_dir / 'edits'}")

@@ -29,6 +29,8 @@ MODEL_ROOT="/data/shared-vilab/pretrained_models"
 VQA_MODEL="${MODEL_ROOT}/Qwen3-VL-8B-Instruct"
 LLM_MODEL="${MODEL_ROOT}/qwen3-32b-weights"
 HUNYUAN_MODEL="${MODEL_ROOT}/HunyuanImage-3-Instruct"
+
+GPU_ID="${GPU_ID:-0}"   # physical GPU id (0, 1, 2, ...)
 # =======================
 
 usage() {
@@ -40,6 +42,7 @@ Edit IMAGE_A, IMAGE_B, NUM_PROMPTS in this script before running.
 Environment:
   ENV_NAME=${ENV_NAME}   conda env for python (default: qwen)
   PYTHON                 override python path
+  GPU_ID                 physical GPU id (default: 0)
 
 Example:
   $(basename "$0") --chain-mode sequential --seed 42
@@ -64,7 +67,10 @@ fi
 
 mkdir -p "$OUT_DIR"
 
+export CUDA_VISIBLE_DEVICES="${GPU_ID}"
+
 echo "python:  $PYTHON" >&2
+echo "gpu:     ${GPU_ID} (CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES})" >&2
 echo "image A: $IMAGE_A" >&2
 echo "image B: $IMAGE_B" >&2
 echo "steps:   $NUM_PROMPTS" >&2
@@ -81,4 +87,5 @@ exec "$PYTHON" "${SCRIPT_DIR}/run_pipeline.py" \
   --vqa-model "$VQA_MODEL" \
   --llm-model "$LLM_MODEL" \
   --hunyuan-model "$HUNYUAN_MODEL" \
+  --gpu 0 \
   "$@"

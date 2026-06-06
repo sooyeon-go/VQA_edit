@@ -114,6 +114,12 @@ def free_gpu() -> None:
         torch.cuda.empty_cache()
 
 
+def build_device_map(gpu: int) -> str | dict:
+    if gpu < 0:
+        return "auto"
+    return {"": gpu}
+
+
 def require_model_dir(path: str, name: str) -> str:
     model_dir = Path(path)
     if not model_dir.is_dir():
@@ -123,12 +129,19 @@ def require_model_dir(path: str, name: str) -> str:
     return str(model_dir)
 
 
-def run_vqa(image_a: Path, image_b: Path, out_dir: Path, model_path: str, max_new_tokens: int) -> str:
+def run_vqa(
+    image_a: Path,
+    image_b: Path,
+    out_dir: Path,
+    model_path: str,
+    max_new_tokens: int,
+    device_map: str | dict,
+) -> str:
     from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
 
     log("[1/3] VQA: loading model...")
     model = Qwen3VLForConditionalGeneration.from_pretrained(
-        model_path, dtype="auto", device_map="auto"
+        model_path, dtype="auto", device_map=device_map
     )
     processor = AutoProcessor.from_pretrained(model_path)
 
@@ -188,13 +201,14 @@ def run_llm(
     model_path: str,
     max_new_tokens: int,
     thinking: bool,
+    device_map: str | dict,
 ) -> str:
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
     log("[2/3] LLM: loading model...")
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     model = AutoModelForCausalLM.from_pretrained(
-        model_path, torch_dtype="auto", device_map="auto"
+        model_path, torch_dtype="auto", device_map=device_map
     )
 
     prompt = LLM_PROMPT_TEMPLATE.format(vqa_output=vqa_output, n=num_prompts)
@@ -259,6 +273,7 @@ def run_hunyuan_edit(
     diff_infer_steps: int,
     moe_impl: str,
     chain_mode: str,
+    device_map: str | dict,
 ) -> list[dict]:
     from transformers import AutoModelForCausalLM
 
@@ -270,7 +285,7 @@ def run_hunyuan_edit(
         attn_implementation="sdpa",
         trust_remote_code=True,
         torch_dtype="auto",
-        device_map="auto",
+        device_map=device_map,
         moe_impl=moe_impl,
         moe_drop_tokens=True,
     )
@@ -362,6 +377,12 @@ def parse_args() -> argparse.Namespace:
         default="sequential",
         help="sequential: each step uses previous output; from_a: always edit from image A",
     )
+    parser.add_argument(
+        "--gpu",
+        type=int,
+        default=0,
+        help="GPU index to use (default: 0). Set -1 for auto multi-GPU.",
+    )
     return parser.parse_args()
 
 
@@ -386,6 +407,11 @@ def main() -> None:
 
     vqa_path = out_dir / "vqa_delta.json"
     prompts_path = out_dir / "editing_prompts.json"
+    device_map = build_device_map(args.gpu)
+    if args.gpu >= 0:
+        log(f"Using single GPU: cuda:{args.gpu}")
+    else:
+        log("Using multi-GPU: device_map=auto")
 
     if args.skip_vqa:
         if not vqa_path.exists():
@@ -395,7 +421,7 @@ def main() -> None:
     else:
         vqa_model = require_model_dir(args.vqa_model, "VQA")
         vqa_output = run_vqa(
-            image_a, image_b, out_dir, vqa_model, args.vqa_max_tokens
+            image_a, image_b, out_dir, vqa_model, args.vqa_max_tokens, device_map
         )
 
     if args.skip_llm:
@@ -412,6 +438,7 @@ def main() -> None:
             llm_model,
             args.llm_max_tokens,
             args.llm_thinking,
+            device_map,
         )
 
     if args.skip_edit:
@@ -434,6 +461,7 @@ def main() -> None:
         diff_infer_steps=args.diff_infer_steps,
         moe_impl=args.moe_impl,
         chain_mode=args.chain_mode,
+        device_map=device_map,
     )
     log(f"Done. Outputs in {out_dir}")
 
