@@ -11,7 +11,7 @@ from huggingface_hub import snapshot_download
 DATASETS = {
     "kiwi": {
         "repo_id": "linyq/kiwi_edit_training_data",
-        "local_dir": "/hdd/sy/datasets/kiwi_edit_training_data",
+        "local_dir": "/data/shared-vilab/datasets/kiwi_edit_training_data",
         "desc": "Kiwi edit training data (~51GB, image/video edit metadata)",
         "subdirs": {
             "image": "image_edit_metadata",

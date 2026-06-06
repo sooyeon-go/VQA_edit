@@ -11,17 +11,17 @@ from huggingface_hub import snapshot_download
 MODELS = {
     "vqa": {
         "repo_id": "Qwen/Qwen3-VL-8B-Instruct",
-        "local_dir": "/hdd/sy/models/Qwen3-VL-8B-Instruct",
+        "local_dir": "/data/shared-vilab/pretrained_models/Qwen3-VL-8B-Instruct",
         "desc": "Qwen3-VL (VQA step)",
     },
     "llm": {
         "repo_id": "Qwen/Qwen3-32B",
-        "local_dir": "/hdd/sy/models/qwen3-32b-weights",
+        "local_dir": "/data/shared-vilab/pretrained_models/qwen3-32b-weights",
         "desc": "Qwen3-32B (LLM prompt step)",
     },
     "hunyuan": {
         "repo_id": "tencent/HunyuanImage-3.0-Instruct",
-        "local_dir": "/hdd/sy/models/HunyuanImage-3-Instruct",
+        "local_dir": "/data/shared-vilab/pretrained_models/HunyuanImage-3-Instruct",
         "desc": "HunyuanImage-3-Instruct (i2i edit step)",
     },
 }
