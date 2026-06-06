@@ -13,6 +13,11 @@ from pathlib import Path
 
 import torch
 
+MODEL_ROOT = "/data/shared-vilab/pretrained_models"
+VQA_MODEL = f"{MODEL_ROOT}/Qwen3-VL-8B-Instruct"
+LLM_MODEL = f"{MODEL_ROOT}/qwen3-32b-weights"
+HUNYUAN_MODEL = f"{MODEL_ROOT}/HunyuanImage-3-Instruct"
+
 VQA_PROMPT = """You are a precise visual analyst for image interpolation.
 
 You will receive TWO images of the SAME object.
@@ -109,6 +114,15 @@ def free_gpu() -> None:
         torch.cuda.empty_cache()
 
 
+def require_model_dir(path: str, name: str) -> str:
+    model_dir = Path(path)
+    if not model_dir.is_dir():
+        raise SystemExit(f"{name} model not found: {path}")
+    if not (model_dir / "config.json").exists():
+        raise SystemExit(f"{name} model invalid (missing config.json): {path}")
+    return str(model_dir)
+
+
 def run_vqa(image_a: Path, image_b: Path, out_dir: Path, model_path: str, max_new_tokens: int) -> str:
     from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
 
@@ -116,7 +130,7 @@ def run_vqa(image_a: Path, image_b: Path, out_dir: Path, model_path: str, max_ne
     model = Qwen3VLForConditionalGeneration.from_pretrained(
         model_path, dtype="auto", device_map="auto"
     )
-    processor = AutoProcessor.from_pretrained("Qwen/Qwen3-VL-8B-Instruct")
+    processor = AutoProcessor.from_pretrained(model_path)
 
     messages = [
         {
@@ -331,12 +345,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-llm", action="store_true", help="Skip LLM; use existing editing_prompts.json")
     parser.add_argument("--skip-edit", action="store_true", help="Skip Hunyuan editing")
 
-    parser.add_argument("--vqa-model", default="/hdd/sy/models/Qwen3-VL-8B-Instruct")
-    parser.add_argument("--llm-model", default="/hdd/sy/models/qwen3-32b-weights/")
-    parser.add_argument(
-        "--hunyuan-model",
-        default="/hdd/sy/models/HunyuanImage-3-Instruct",
-    )
+    parser.add_argument("--vqa-model", default=VQA_MODEL)
+    parser.add_argument("--llm-model", default=LLM_MODEL)
+    parser.add_argument("--hunyuan-model", default=HUNYUAN_MODEL)
 
     parser.add_argument("--vqa-max-tokens", type=int, default=512)
     parser.add_argument("--llm-max-tokens", type=int, default=4096)
@@ -382,8 +393,9 @@ def main() -> None:
         vqa_output = vqa_path.read_text(encoding="utf-8").strip()
         log("[1/3] VQA: skipped (using existing vqa_delta.json)")
     else:
+        vqa_model = require_model_dir(args.vqa_model, "VQA")
         vqa_output = run_vqa(
-            image_a, image_b, out_dir, args.vqa_model, args.vqa_max_tokens
+            image_a, image_b, out_dir, vqa_model, args.vqa_max_tokens
         )
 
     if args.skip_llm:
@@ -392,11 +404,12 @@ def main() -> None:
         llm_output = prompts_path.read_text(encoding="utf-8").strip()
         log("[2/3] LLM: skipped (using existing editing_prompts.json)")
     else:
+        llm_model = require_model_dir(args.llm_model, "LLM")
         llm_output = run_llm(
             vqa_output,
             args.num_prompts,
             out_dir,
-            args.llm_model,
+            llm_model,
             args.llm_max_tokens,
             args.llm_thinking,
         )
@@ -411,11 +424,12 @@ def main() -> None:
     except ValueError:
         prompts_data = extract_json(prompts_path.read_text(encoding="utf-8"))
 
+    hunyuan_model = require_model_dir(args.hunyuan_model, "Hunyuan")
     run_hunyuan_edit(
         image_a=image_a,
         prompts_data=prompts_data,
         out_dir=out_dir,
-        model_path=args.hunyuan_model,
+        model_path=hunyuan_model,
         seed=args.seed,
         diff_infer_steps=args.diff_infer_steps,
         moe_impl=args.moe_impl,

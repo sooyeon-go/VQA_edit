@@ -24,6 +24,11 @@ IMAGE_A="/path/to/start.png"
 IMAGE_B="/path/to/end.png"
 NUM_PROMPTS=5
 OUT_DIR="${SCRIPT_DIR}/out"
+
+MODEL_ROOT="/data/shared-vilab/pretrained_models"
+VQA_MODEL="${MODEL_ROOT}/Qwen3-VL-8B-Instruct"
+LLM_MODEL="${MODEL_ROOT}/qwen3-32b-weights"
+HUNYUAN_MODEL="${MODEL_ROOT}/HunyuanImage-3-Instruct"
 # =======================
 
 usage() {
@@ -64,10 +69,16 @@ echo "image A: $IMAGE_A" >&2
 echo "image B: $IMAGE_B" >&2
 echo "steps:   $NUM_PROMPTS" >&2
 echo "out:     $OUT_DIR" >&2
+echo "vqa:     $VQA_MODEL" >&2
+echo "llm:     $LLM_MODEL" >&2
+echo "hunyuan: $HUNYUAN_MODEL" >&2
 
 exec "$PYTHON" "${SCRIPT_DIR}/run_pipeline.py" \
   --image-a "$IMAGE_A" \
   --image-b "$IMAGE_B" \
   -n "$NUM_PROMPTS" \
   --out-dir "$OUT_DIR" \
+  --vqa-model "$VQA_MODEL" \
+  --llm-model "$LLM_MODEL" \
+  --hunyuan-model "$HUNYUAN_MODEL" \
   "$@"
