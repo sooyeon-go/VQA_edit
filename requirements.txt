@@ -6,7 +6,7 @@ diffusers==0.35.2
 safetensors==0.7.0
 tokenizers==0.22.0
 transformers[accelerate,tiktoken]==4.57.1
-huggingface_hub[cli]>=1.0.0
+huggingface_hub[cli]>=0.34.0,<1.0
 loguru>=0.7.3
 accelerate>=1.0.0
 qwen-vl-utils>=0.0.8
