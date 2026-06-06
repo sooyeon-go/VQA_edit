@@ -50,6 +50,9 @@ fi
 echo "==> installing Python dependencies"
 python -m pip install -r "$REQ_FILE"
 
+echo "==> installing latest diffusers from git (QwenImageEditPlusPipeline)"
+python -m pip install -U "git+https://github.com/huggingface/diffusers.git"
+
 if [[ "$INSTALL_FLASHINFER" == "1" ]]; then
   echo "==> installing flashinfer (optional, faster Hunyuan MoE)"
   python -m pip install flashinfer-python==0.5.0 || {

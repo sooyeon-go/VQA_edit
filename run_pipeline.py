@@ -217,7 +217,7 @@ def run_llm(
     log("[2/3] LLM: loading model...")
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     model = AutoModelForCausalLM.from_pretrained(
-        model_path, torch_dtype="auto", device_map=device_map
+        model_path, dtype="auto", device_map=device_map
     )
 
     prompt = LLM_PROMPT_TEMPLATE.format(vqa_output=vqa_output, n=num_prompts)
@@ -287,7 +287,15 @@ def run_qwen_edit(
     gpu: int,
 ) -> list[dict]:
     from PIL import Image
-    from diffusers import QwenImageEditPlusPipeline
+
+    try:
+        from diffusers import QwenImageEditPlusPipeline
+    except ImportError as exc:
+        raise SystemExit(
+            "QwenImageEditPlusPipeline not found in diffusers.\n"
+            "Install the latest diffusers from git:\n"
+            "  pip install -U git+https://github.com/huggingface/diffusers.git"
+        ) from exc
 
     edits_dir = out_dir / "edits"
     edits_dir.mkdir(parents=True, exist_ok=True)

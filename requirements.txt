@@ -1,8 +1,8 @@
-# Pipeline + HunyuanImage-3.0-Instruct (see SETUP.txt for PyTorch install order)
+# Pipeline deps (see SETUP.txt for PyTorch + diffusers install order)
+# diffusers: installed from git in setup_env.sh (needs QwenImageEditPlusPipeline)
 einops==0.8.1
 numpy==2.2.0
 pillow==12.0.0
-diffusers==0.35.2
 safetensors==0.7.0
 tokenizers==0.22.0
 transformers[accelerate,tiktoken]==4.57.1
