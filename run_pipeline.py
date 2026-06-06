@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""VQA -> LLM -> Hunyuan i2i interpolation pipeline."""
+"""VQA -> LLM -> Qwen-Image-Edit i2i interpolation pipeline."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ import torch
 MODEL_ROOT = "/data/shared-vilab/pretrained_models"
 VQA_MODEL = f"{MODEL_ROOT}/Qwen3-VL-8B-Instruct"
 LLM_MODEL = f"{MODEL_ROOT}/qwen3-32b-weights"
-HUNYUAN_MODEL = f"{MODEL_ROOT}/HunyuanImage-3-Instruct"
+QWEN_EDIT_MODEL = f"{MODEL_ROOT}/Qwen-Image-Edit-2511"
 
 VQA_PROMPT = """You are a precise visual analyst for image interpolation.
 
@@ -126,6 +126,15 @@ def require_model_dir(path: str, name: str) -> str:
         raise SystemExit(f"{name} model not found: {path}")
     if not (model_dir / "config.json").exists():
         raise SystemExit(f"{name} model invalid (missing config.json): {path}")
+    return str(model_dir)
+
+
+def require_edit_model_dir(path: str, name: str) -> str:
+    model_dir = Path(path)
+    if not model_dir.is_dir():
+        raise SystemExit(f"{name} model not found: {path}")
+    if not (model_dir / "model_index.json").exists():
+        raise SystemExit(f"{name} model invalid (missing model_index.json): {path}")
     return str(model_dir)
 
 
@@ -264,33 +273,32 @@ def load_editing_steps(prompts_data: dict) -> list[dict]:
     return sorted(steps, key=lambda x: x.get("step", 0))
 
 
-def run_hunyuan_edit(
+def run_qwen_edit(
     image_a: Path,
     prompts_data: dict,
     out_dir: Path,
     model_path: str,
     seed: int,
-    diff_infer_steps: int,
-    moe_impl: str,
+    num_inference_steps: int,
+    true_cfg_scale: float,
+    guidance_scale: float,
+    negative_prompt: str,
     chain_mode: str,
-    device_map: str | dict,
+    gpu: int,
 ) -> list[dict]:
-    from transformers import AutoModelForCausalLM
+    from PIL import Image
+    from diffusers import QwenImageEditPlusPipeline
 
     edits_dir = out_dir / "edits"
     edits_dir.mkdir(parents=True, exist_ok=True)
 
-    log("[3/3] Hunyuan: loading model...")
-    kwargs = dict(
-        attn_implementation="sdpa",
-        trust_remote_code=True,
-        torch_dtype="auto",
-        device_map=device_map,
-        moe_impl=moe_impl,
-        moe_drop_tokens=True,
+    device = "cuda" if gpu < 0 else f"cuda:{gpu}"
+    log(f"[3/3] Qwen-Image-Edit: loading model on {device}...")
+    pipeline = QwenImageEditPlusPipeline.from_pretrained(
+        model_path, torch_dtype=torch.bfloat16
     )
-    model = AutoModelForCausalLM.from_pretrained(model_path, **kwargs)
-    model.load_tokenizer(model_path)
+    pipeline.to(device)
+    pipeline.set_progress_bar_config(disable=None)
 
     steps = load_editing_steps(prompts_data)
     manifest: list[dict] = []
@@ -307,19 +315,23 @@ def run_hunyuan_edit(
         out_name = f"step_{step_num:02d}.png"
         out_path = edits_dir / out_name
 
-        log(f"[3/3] Hunyuan: step {step_num}/{len(steps)} ({focus})")
-        cot_text, samples = model.generate_image(
-            prompt=prompt,
-            image=[str(input_image)],
-            seed=seed + step_num,
-            image_size="auto",
-            use_system_prompt="en_unified",
-            bot_task="think_recaption",
-            infer_align_image_size=True,
-            diff_infer_steps=diff_infer_steps,
-            verbose=1,
-        )
-        samples[0].save(out_path)
+        log(f"[3/3] Qwen-Image-Edit: step {step_num}/{len(steps)} ({focus})")
+        pil_image = Image.open(input_image).convert("RGB")
+        generator = torch.Generator(device=device).manual_seed(seed + step_num)
+
+        with torch.inference_mode():
+            output = pipeline(
+                image=[pil_image],
+                prompt=prompt,
+                generator=generator,
+                true_cfg_scale=true_cfg_scale,
+                negative_prompt=negative_prompt,
+                num_inference_steps=num_inference_steps,
+                guidance_scale=guidance_scale,
+                num_images_per_prompt=1,
+            )
+
+        output.images[0].save(out_path)
 
         entry = {
             "step": step_num,
@@ -328,7 +340,6 @@ def run_hunyuan_edit(
             "input_image": str(input_image),
             "output_image": str(out_path),
             "chain_mode": chain_mode,
-            "cot_text": cot_text,
         }
         manifest.append(entry)
         current_image = out_path
@@ -337,14 +348,14 @@ def run_hunyuan_edit(
     save_json(edits_dir / "manifest.json", {"steps": manifest})
     log(f"      saved: {edits_dir / 'manifest.json'}")
 
-    del model
+    del pipeline
     free_gpu()
     return manifest
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="VQA -> LLM -> Hunyuan i2i interpolation pipeline"
+        description="VQA -> LLM -> Qwen-Image-Edit i2i interpolation pipeline"
     )
     parser.add_argument("--image-a", type=Path, required=True, help="Start image (A)")
     parser.add_argument("--image-b", type=Path, required=True, help="End image (B)")
@@ -358,19 +369,21 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument("--skip-vqa", action="store_true", help="Skip VQA; use existing vqa_delta.json")
     parser.add_argument("--skip-llm", action="store_true", help="Skip LLM; use existing editing_prompts.json")
-    parser.add_argument("--skip-edit", action="store_true", help="Skip Hunyuan editing")
+    parser.add_argument("--skip-edit", action="store_true", help="Skip image editing step")
 
     parser.add_argument("--vqa-model", default=VQA_MODEL)
     parser.add_argument("--llm-model", default=LLM_MODEL)
-    parser.add_argument("--hunyuan-model", default=HUNYUAN_MODEL)
+    parser.add_argument("--edit-model", default=QWEN_EDIT_MODEL)
 
     parser.add_argument("--vqa-max-tokens", type=int, default=512)
     parser.add_argument("--llm-max-tokens", type=int, default=4096)
     parser.add_argument("--llm-thinking", action="store_true")
 
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--diff-infer-steps", type=int, default=50)
-    parser.add_argument("--moe-impl", choices=["eager", "flashinfer"], default="eager")
+    parser.add_argument("--num-inference-steps", type=int, default=40)
+    parser.add_argument("--true-cfg-scale", type=float, default=4.0)
+    parser.add_argument("--guidance-scale", type=float, default=1.0)
+    parser.add_argument("--negative-prompt", default=" ")
     parser.add_argument(
         "--chain-mode",
         choices=["sequential", "from_a"],
@@ -442,7 +455,7 @@ def main() -> None:
         )
 
     if args.skip_edit:
-        log("[3/3] Hunyuan: skipped")
+        log("[3/3] Qwen-Image-Edit: skipped")
         log(f"Done. Outputs in {out_dir}")
         return
 
@@ -451,17 +464,19 @@ def main() -> None:
     except ValueError:
         prompts_data = extract_json(prompts_path.read_text(encoding="utf-8"))
 
-    hunyuan_model = require_model_dir(args.hunyuan_model, "Hunyuan")
-    run_hunyuan_edit(
+    edit_model = require_edit_model_dir(args.edit_model, "Qwen-Image-Edit")
+    run_qwen_edit(
         image_a=image_a,
         prompts_data=prompts_data,
         out_dir=out_dir,
-        model_path=hunyuan_model,
+        model_path=edit_model,
         seed=args.seed,
-        diff_infer_steps=args.diff_infer_steps,
-        moe_impl=args.moe_impl,
+        num_inference_steps=args.num_inference_steps,
+        true_cfg_scale=args.true_cfg_scale,
+        guidance_scale=args.guidance_scale,
+        negative_prompt=args.negative_prompt,
         chain_mode=args.chain_mode,
-        device_map=device_map,
+        gpu=args.gpu,
     )
     log(f"Done. Outputs in {out_dir}")
 

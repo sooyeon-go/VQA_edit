@@ -24,6 +24,11 @@ MODELS = {
         "local_dir": "/data/shared-vilab/pretrained_models/HunyuanImage-3-Instruct",
         "desc": "HunyuanImage-3-Instruct (i2i edit step)",
     },
+    "qwen-edit": {
+        "repo_id": "Qwen/Qwen-Image-Edit-2511",
+        "local_dir": "/data/shared-vilab/pretrained_models/Qwen-Image-Edit-2511",
+        "desc": "Qwen-Image-Edit-2511 (diffusers i2i edit, ~58GB)",
+    },
 }
 
 

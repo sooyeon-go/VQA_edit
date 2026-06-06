@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""HunyuanImage-3-Instruct i2i editing from editing_prompts.json."""
+"""Qwen-Image-Edit-2511 i2i editing from editing_prompts.json."""
 
 from __future__ import annotations
 
@@ -7,18 +7,18 @@ import argparse
 from pathlib import Path
 
 from run_pipeline import (
-    HUNYUAN_MODEL,
-    build_device_map,
+    QWEN_EDIT_MODEL,
     extract_json,
     log,
-    run_hunyuan_edit,
+    require_edit_model_dir,
+    run_qwen_edit,
     save_json,
 )
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run Hunyuan i2i editing with prompts from editing_prompts.json"
+        description="Run Qwen-Image-Edit with prompts from editing_prompts.json"
     )
     parser.add_argument("--image-a", type=Path, required=True, help="Input image (start state)")
     parser.add_argument(
@@ -28,11 +28,13 @@ def parse_args() -> argparse.Namespace:
         help="editing_prompts.json from LLM step",
     )
     parser.add_argument("--out-dir", type=Path, default=Path("./edits_out"))
-    parser.add_argument("--hunyuan-model", default=HUNYUAN_MODEL)
-    parser.add_argument("--gpu", type=int, default=0, help="GPU index (default: 0). -1 for auto.")
+    parser.add_argument("--edit-model", default=QWEN_EDIT_MODEL)
+    parser.add_argument("--gpu", type=int, default=0, help="GPU index (default: 0)")
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--diff-infer-steps", type=int, default=50)
-    parser.add_argument("--moe-impl", choices=["eager", "flashinfer"], default="eager")
+    parser.add_argument("--num-inference-steps", type=int, default=40)
+    parser.add_argument("--true-cfg-scale", type=float, default=4.0)
+    parser.add_argument("--guidance-scale", type=float, default=1.0)
+    parser.add_argument("--negative-prompt", default=" ")
     parser.add_argument(
         "--chain-mode",
         choices=["sequential", "from_a"],
@@ -56,16 +58,19 @@ def main() -> None:
     prompts_data = extract_json(prompts_text)
     save_json(out_dir / "editing_prompts.json", prompts_data)
 
-    manifest = run_hunyuan_edit(
+    edit_model = require_edit_model_dir(args.edit_model, "Qwen-Image-Edit")
+    manifest = run_qwen_edit(
         image_a=args.image_a.resolve(),
         prompts_data=prompts_data,
         out_dir=out_dir,
-        model_path=args.hunyuan_model,
+        model_path=edit_model,
         seed=args.seed,
-        diff_infer_steps=args.diff_infer_steps,
-        moe_impl=args.moe_impl,
+        num_inference_steps=args.num_inference_steps,
+        true_cfg_scale=args.true_cfg_scale,
+        guidance_scale=args.guidance_scale,
+        negative_prompt=args.negative_prompt,
         chain_mode=args.chain_mode,
-        device_map=build_device_map(args.gpu),
+        gpu=args.gpu,
     )
 
     log(f"Edited {len(manifest)} steps. Outputs in {out_dir / 'edits'}")

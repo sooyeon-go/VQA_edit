@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# VQA -> LLM -> Hunyuan i2i (full pipeline)
+# VQA -> LLM -> Qwen-Image-Edit i2i (full pipeline)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -28,7 +28,7 @@ OUT_DIR="${SCRIPT_DIR}/out"
 MODEL_ROOT="/data/shared-vilab/pretrained_models"
 VQA_MODEL="${MODEL_ROOT}/Qwen3-VL-8B-Instruct"
 LLM_MODEL="${MODEL_ROOT}/qwen3-32b-weights"
-HUNYUAN_MODEL="${MODEL_ROOT}/HunyuanImage-3-Instruct"
+EDIT_MODEL="${MODEL_ROOT}/Qwen-Image-Edit-2511"
 
 GPU_ID="${GPU_ID:-0}"   # physical GPU id (0, 1, 2, ...)
 # =======================
@@ -77,7 +77,7 @@ echo "steps:   $NUM_PROMPTS" >&2
 echo "out:     $OUT_DIR" >&2
 echo "vqa:     $VQA_MODEL" >&2
 echo "llm:     $LLM_MODEL" >&2
-echo "hunyuan: $HUNYUAN_MODEL" >&2
+echo "edit:    $EDIT_MODEL" >&2
 
 exec "$PYTHON" "${SCRIPT_DIR}/run_pipeline.py" \
   --image-a "$IMAGE_A" \
@@ -86,6 +86,6 @@ exec "$PYTHON" "${SCRIPT_DIR}/run_pipeline.py" \
   --out-dir "$OUT_DIR" \
   --vqa-model "$VQA_MODEL" \
   --llm-model "$LLM_MODEL" \
-  --hunyuan-model "$HUNYUAN_MODEL" \
+  --edit-model "$EDIT_MODEL" \
   --gpu 0 \
   "$@"
