@@ -20,8 +20,8 @@ if [[ -z "${PYTHON:-}" ]]; then
 fi
 
 # ===== 여기만 수정 =====
-IMAGE_A="/path/to/start.png"
-IMAGE_B="/path/to/end.png"
+IMAGE_A="/data/project-vilab/sy/qwen/VQA_edit/image_dataset/cat_1.png"
+IMAGE_B="/data/project-vilab/sy/qwen/VQA_edit/image_dataset/cat_2.png"
 NUM_PROMPTS=5
 OUT_DIR="${SCRIPT_DIR}/out"
 
