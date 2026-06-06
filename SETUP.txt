@@ -19,7 +19,7 @@ Quick install (recommended)
 ---------------------------
   cd /mnt/sy/qwen
   bash setup_env.sh
-  conda activate qwen-pipeline
+  conda activate qwen
 
 Optional faster Hunyuan inference:
   INSTALL_FLASHINFER=1 bash setup_env.sh
@@ -28,8 +28,8 @@ Optional faster Hunyuan inference:
 
 Manual install
 --------------
-  conda create -y -n qwen-pipeline python=3.12
-  conda activate qwen-pipeline
+  conda create -y -n qwen python=3.12
+  conda activate qwen
 
   pip install torch==2.8.0 torchvision==0.23.0 torchaudio==2.8.0 \
     --index-url https://download.pytorch.org/whl/cu128
@@ -84,7 +84,7 @@ Run pipeline
 
 Long jobs — use tmux:
   tmux new -s pipeline
-  conda activate qwen-pipeline
+  conda activate qwen
   /mnt/sy/qwen/run.sh
 
 

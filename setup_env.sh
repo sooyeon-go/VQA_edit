@@ -11,6 +11,7 @@ INSTALL_FLASHINFER="${INSTALL_FLASHINFER:-0}"
 echo "==> env name:     $ENV_NAME"
 echo "==> python:       $PYTHON_VERSION"
 echo "==> cuda wheels:  $CUDA_INDEX"
+echo "==> script dir:   $SCRIPT_DIR"
 
 if ! command -v conda >/dev/null 2>&1; then
   echo "Error: conda not found. Install Miniconda/Anaconda first." >&2
@@ -37,8 +38,17 @@ python -m pip install \
   torch==2.8.0 torchvision==0.23.0 torchaudio==2.8.0 \
   --index-url "https://download.pytorch.org/whl/${CUDA_INDEX}"
 
+REQ_FILE="${SCRIPT_DIR}/requirements.txt"
+echo "==> checking ${REQ_FILE}"
+if grep -qE 'huggingface_hub\[cli\].*>=1\.0' "$REQ_FILE" || grep -qE 'huggingface_hub.*>=1\.0' "$REQ_FILE"; then
+  echo "Error: requirements.txt pins huggingface_hub>=1.0, which conflicts with tokenizers==0.22.0" >&2
+  echo "Fix this line in requirements.txt:" >&2
+  echo "  huggingface_hub[cli]>=0.34.0,<1.0" >&2
+  exit 1
+fi
+
 echo "==> installing Python dependencies"
-python -m pip install -r "${SCRIPT_DIR}/requirements.txt"
+python -m pip install -r "$REQ_FILE"
 
 if [[ "$INSTALL_FLASHINFER" == "1" ]]; then
   echo "==> installing flashinfer (optional, faster Hunyuan MoE)"
@@ -48,15 +58,29 @@ if [[ "$INSTALL_FLASHINFER" == "1" ]]; then
 fi
 
 echo
+echo "==> verifying key packages"
+python - <<'PY'
+import importlib
+
+pkgs = ["torch", "transformers", "diffusers", "huggingface_hub"]
+for name in pkgs:
+    m = importlib.import_module(name)
+    print(f"  {name}: {getattr(m, '__version__', 'ok')}")
+PY
+
+echo
 echo "Done."
 echo
 echo "Activate:"
 echo "  conda activate ${ENV_NAME}"
 echo
-echo "Download models:"
+echo "Download models (weights -> /hdd/sy/models/, NOT inside conda env):"
 echo "  python ${SCRIPT_DIR}/model_download.py"
 echo
-echo "Run pipeline (edit paths in run.sh first):"
+echo "Download dataset (optional):"
+echo "  python ${SCRIPT_DIR}/dataset_download.py"
+echo
+echo "Run pipeline (edit IMAGE_A/IMAGE_B in run.sh first):"
 echo "  ${SCRIPT_DIR}/run.sh"
 echo
 python - <<'PY'
