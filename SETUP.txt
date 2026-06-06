@@ -1,0 +1,98 @@
+================================================================================
+  Qwen VQA -> LLM -> Hunyuan i2i Pipeline — Environment Setup
+================================================================================
+
+Prerequisites
+-------------
+- OS: Linux (recommended)
+- NVIDIA GPU + driver
+- CUDA 12.8 wheels recommended (HunyuanImage-3.0-Instruct official)
+- Disk: ~200GB+ for all model weights
+- GPU VRAM (rough guide):
+    - VQA (Qwen3-VL-8B):        ~16–24 GB
+    - LLM (Qwen3-32B):          ~64 GB+ (or multi-GPU via device_map)
+    - Hunyuan edit (80B MoE):   ~3×80 GB recommended
+  Models load one at a time in run_pipeline.py (not all at once).
+
+
+Quick install (recommended)
+---------------------------
+  cd /mnt/sy/qwen
+  bash setup_env.sh
+  conda activate qwen-pipeline
+
+Optional faster Hunyuan inference:
+  INSTALL_FLASHINFER=1 bash setup_env.sh
+  # then run with: --moe-impl flashinfer
+
+
+Manual install
+--------------
+  conda create -y -n qwen-pipeline python=3.12
+  conda activate qwen-pipeline
+
+  pip install torch==2.8.0 torchvision==0.23.0 torchaudio==2.8.0 \
+    --index-url https://download.pytorch.org/whl/cu128
+
+  pip install -r /mnt/sy/qwen/requirements.txt
+
+
+Download models
+---------------
+  python /mnt/sy/qwen/model_download.py          # all
+  python /mnt/sy/qwen/model_download.py hunyuan # one only
+
+Models saved to:
+  /hdd/sy/models/Qwen3-VL-8B-Instruct      (VQA)
+  /hdd/sy/models/qwen3-32b-weights         (LLM)
+  /hdd/sy/models/HunyuanImage-3-Instruct   (i2i edit)
+
+Hugging Face token (faster download, optional):
+  export HF_TOKEN="hf_xxxx"
+  huggingface-cli login
+
+
+Run pipeline
+------------
+1) Edit paths in run.sh:
+     IMAGE_A, IMAGE_B, NUM_PROMPTS, OUT_DIR
+
+2) Run:
+     /mnt/sy/qwen/run.sh
+
+   Or directly:
+     python /mnt/sy/qwen/run_pipeline.py \
+       --image-a /path/to/start.png \
+       --image-b /path/to/end.png \
+       -n 5 \
+       --out-dir /mnt/sy/qwen/out
+
+3) Outputs:
+     out/vqa_delta.json
+     out/editing_prompts.json
+     out/edits/step_01.png ... step_NN.png
+     out/edits/manifest.json
+
+Long jobs — use tmux:
+  tmux new -s pipeline
+  conda activate qwen-pipeline
+  /mnt/sy/qwen/run.sh
+
+
+Useful options
+--------------
+  --skip-vqa / --skip-llm / --skip-edit     resume partial pipeline
+  --chain-mode sequential                   step N uses step N-1 output
+  --chain-mode from_a                       every step edits from image A
+  --moe-impl eager|flashinfer               Hunyuan MoE backend
+  --diff-infer-steps 50                     Hunyuan diffusion steps
+
+
+Files
+-----
+  setup_env.sh       automated conda + pip install
+  requirements.txt   Python packages (PyTorch installed separately)
+  model_download.py  download all HF models
+  run_pipeline.py    full VQA -> LLM -> Hunyuan pipeline
+  run.sh             one-command runner (edit paths inside)
+  hunyuan_i2i.py     Hunyuan edit only (from editing_prompts.json)
