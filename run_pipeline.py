@@ -347,7 +347,7 @@ def run_qwen_edit(
             f"input={input_image}"
         )
         pil_image = Image.open(input_image).convert("RGB")
-        generator = torch.Generator(device=device).manual_seed(seed + step_num)
+        generator = torch.Generator(device="cpu").manual_seed(seed + step_num)
 
         with torch.inference_mode():
             output = pipeline(
@@ -487,7 +487,17 @@ def main() -> None:
     try:
         prompts_data = extract_json(llm_output)
     except ValueError:
-        prompts_data = extract_json(prompts_path.read_text(encoding="utf-8"))
+        try:
+            prompts_data = extract_json(prompts_path.read_text(encoding="utf-8"))
+        except ValueError as exc:
+            raise SystemExit(
+                f"Could not parse editing prompts from {prompts_path}. "
+                "Re-run LLM or fix the JSON before editing."
+            ) from exc
+    try:
+        load_editing_steps(prompts_data)
+    except ValueError as exc:
+        raise SystemExit(f"Invalid editing prompts in {prompts_path}: {exc}") from exc
 
     edit_model = require_edit_model_dir(args.edit_model, "Qwen-Image-Edit")
     run_qwen_edit(

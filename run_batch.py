@@ -78,16 +78,53 @@ def copy_prompt_artifacts(src_dir: Path, dst_dir: Path) -> None:
         shutil.copytree(src_inputs, dst_inputs)
 
 
-def run_pipeline(args: list[str], env: dict[str, str]) -> None:
+def run_pipeline(args: list[str], env: dict[str, str], label: str = "") -> None:
     cmd = [sys.executable, str(RUN_PIPELINE), *args]
-    log(f"  $ {' '.join(cmd)}")
-    subprocess.run(cmd, check=True, env=env)
+    prefix = f"[{label}] " if label else ""
+    log(f"{prefix}$ {' '.join(cmd)}")
+    proc = subprocess.run(cmd, check=False, env=env, capture_output=True, text=True)
+    if proc.stdout:
+        print(proc.stdout, end="", file=sys.stderr)
+    if proc.stderr:
+        print(proc.stderr, end="", file=sys.stderr)
+    if proc.returncode != 0:
+        tail = (proc.stderr or proc.stdout or "").strip()[-2000:]
+        raise RuntimeError(
+            f"pipeline failed (exit {proc.returncode})"
+            + (f"\n--- last output ---\n{tail}" if tail else "")
+        )
 
 
 def gpu_env(gpu_id: int) -> dict[str, str]:
     env = os.environ.copy()
     env["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
     return env
+
+
+def prompts_path(pair_dir: Path) -> Path:
+    return pair_dir / "editing_prompts.json"
+
+
+def edits_manifest_path(seed_dir: Path) -> Path:
+    return seed_dir / "edits" / "manifest.json"
+
+
+def require_prompts(pair_dir: Path) -> None:
+    path = prompts_path(pair_dir)
+    if not path.is_file():
+        raise RuntimeError(f"missing prompts file: {path}")
+    if path.stat().st_size == 0:
+        raise RuntimeError(f"empty prompts file: {path}")
+
+
+def require_edits(seed_dir: Path) -> None:
+    manifest = edits_manifest_path(seed_dir)
+    if not manifest.is_file():
+        raise RuntimeError(f"missing edit manifest: {manifest}")
+    edits_dir = seed_dir / "edits"
+    pngs = list(edits_dir.glob("step_*.png"))
+    if not pngs:
+        raise RuntimeError(f"no step images in {edits_dir}")
 
 
 @dataclass(frozen=True)
@@ -110,7 +147,6 @@ class EditJob:
     seed_dir: str
     seed_idx: int
     num_prompts: int
-    needs_prompts: bool = False
 
 
 def run_prompt_job(job: PromptJob) -> str:
@@ -126,14 +162,20 @@ def run_prompt_job(job: PromptJob) -> str:
             *COMMON_ARGS,
         ],
         env,
+        label=job.label,
     )
+    require_prompts(Path(job.pair_dir))
     return job.label
 
 
 def run_edit_job(job: EditJob) -> str:
     env = gpu_env(job.gpu)
-    copy_prompt_artifacts(Path(job.pair_dir), Path(job.seed_dir))
-    log(f"[GPU {job.gpu}] {job.label}: editing")
+    pair_dir = Path(job.pair_dir)
+    seed_dir = Path(job.seed_dir)
+    require_prompts(pair_dir)
+    copy_prompt_artifacts(pair_dir, seed_dir)
+    require_prompts(seed_dir)
+    log(f"[GPU {job.gpu}] {job.label}: editing -> {seed_dir / 'edits'}")
     run_pipeline(
         [
             "--image-a", job.image_a,
@@ -146,7 +188,9 @@ def run_edit_job(job: EditJob) -> str:
             *COMMON_ARGS,
         ],
         env,
+        label=job.label,
     )
+    require_edits(seed_dir)
     return job.label
 
 
@@ -172,12 +216,9 @@ def run_parallel(jobs: list, worker, gpus: list[int]) -> None:
         raise SystemExit("Failed jobs:\n  " + "\n  ".join(errors))
 
 
-def run_sequential_prompt(job: PromptJob) -> None:
-    run_prompt_job(job)
-
-
-def run_sequential_edit(job: EditJob) -> None:
-    run_edit_job(job)
+def run_sequential(jobs: list, worker, gpus: list[int]) -> None:
+    for job in assign_gpus(jobs, gpus):
+        worker(job)
 
 
 def parse_args() -> argparse.Namespace:
@@ -200,6 +241,16 @@ def parse_args() -> argparse.Namespace:
         help="Comma-separated GPU ids for parallel runs, e.g. 0,1,2,3 (one job per GPU)",
     )
     parser.add_argument("--skip-existing", action="store_true", help="Skip pair/seed if edits already exist")
+    parser.add_argument(
+        "--skip-prompts",
+        action="store_true",
+        help="Skip VQA+LLM; only run edit jobs (requires existing editing_prompts.json per pair)",
+    )
+    parser.add_argument(
+        "--sequential",
+        action="store_true",
+        help="Run jobs one at a time (easier debugging)",
+    )
     return parser.parse_args()
 
 
@@ -207,6 +258,13 @@ def parse_gpu_list(args: argparse.Namespace) -> list[int]:
     if args.gpus:
         return [int(x.strip()) for x in args.gpus.split(",") if x.strip()]
     return [args.gpu]
+
+
+def run_jobs(jobs: list, worker, gpus: list[int], sequential: bool) -> None:
+    if sequential or len(gpus) == 1:
+        run_sequential(jobs, worker, gpus)
+    else:
+        run_parallel(jobs, worker, gpus)
 
 
 def main() -> None:
@@ -227,8 +285,9 @@ def main() -> None:
     log(f"images:  {len(images)} (cat+dog, lion excluded)")
     log(f"pairs:   {len(pairs)} (circular)")
     log(f"seeds:   {args.num_seeds} (seed0 .. seed{args.num_seeds - 1})")
-    log(f"gpus:    {gpus} ({'parallel' if len(gpus) > 1 else 'single'})")
+    log(f"gpus:    {gpus} ({'sequential' if args.sequential or len(gpus) == 1 else 'parallel'})")
     log(f"out:     {out_base}")
+    log(f"edits save to: {{pair}}/seedN/edits/step_XX.png")
 
     prompt_jobs: list[PromptJob] = []
     edit_jobs: list[EditJob] = []
@@ -236,9 +295,9 @@ def main() -> None:
     for image_a, image_b in pairs:
         name = pair_name(image_a, image_b)
         pair_dir = out_base / name
-        prompts_ready = (pair_dir / "editing_prompts.json").exists()
+        prompts_ready = prompts_path(pair_dir).is_file()
 
-        if not prompts_ready:
+        if not args.skip_prompts and not prompts_ready:
             prompt_jobs.append(
                 PromptJob(
                     label=name,
@@ -249,11 +308,13 @@ def main() -> None:
                     num_prompts=args.num_prompts,
                 )
             )
+        elif args.skip_prompts and not prompts_ready:
+            log(f"warning: skipping edits for {name} (no editing_prompts.json)")
+            continue
 
         for seed_idx in range(args.num_seeds):
             seed_dir = pair_dir / f"seed{seed_idx}"
-            edits_done = (seed_dir / "edits" / "manifest.json").exists()
-            if args.skip_existing and edits_done:
+            if args.skip_existing and edits_manifest_path(seed_dir).exists():
                 continue
             edit_jobs.append(
                 EditJob(
@@ -265,34 +326,20 @@ def main() -> None:
                     seed_dir=str(seed_dir),
                     seed_idx=seed_idx,
                     num_prompts=args.num_prompts,
-                    needs_prompts=not prompts_ready,
                 )
             )
 
-    prompt_phase_edits = [j for j in edit_jobs if j.needs_prompts]
-    ready_edits = [j for j in edit_jobs if not j.needs_prompts]
-
     log(f"\nPhase 1: {len(prompt_jobs)} prompt job(s)")
-    if len(gpus) > 1:
-        run_parallel(prompt_jobs, run_prompt_job, gpus)
-    else:
-        for job in assign_gpus(prompt_jobs, gpus):
-            run_sequential_prompt(job)
+    run_jobs(prompt_jobs, run_prompt_job, gpus, args.sequential)
 
-    log(f"\nPhase 2: {len(prompt_phase_edits)} edit job(s)")
-    if len(gpus) > 1:
-        run_parallel(prompt_phase_edits, run_edit_job, gpus)
-    else:
-        for job in assign_gpus(prompt_phase_edits, gpus):
-            run_sequential_edit(job)
+    for job in edit_jobs:
+        require_prompts(Path(job.pair_dir))
 
-    if ready_edits:
-        log(f"\nPhase 3: {len(ready_edits)} edit job(s) (prompts already existed)")
-        if len(gpus) > 1:
-            run_parallel(ready_edits, run_edit_job, gpus)
-        else:
-            for job in assign_gpus(ready_edits, gpus):
-                run_sequential_edit(job)
+    log(f"\nPhase 2: {len(edit_jobs)} edit job(s)")
+    if not edit_jobs:
+        log("No edit jobs scheduled.")
+    else:
+        run_jobs(edit_jobs, run_edit_job, gpus, args.sequential)
 
     log(f"\nDone. Results in {out_base}")
 
