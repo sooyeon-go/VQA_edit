@@ -15,11 +15,20 @@ VISUAL DELTA:
 
 Generate {n} editing prompts that progressively move the object from A toward B.
 
+EDITING CHAIN (how prompts will be used):
+- Step 1: applied to image A (start state)
+- Step k (k > 1): applied to the edited output of step k-1
+- Each step must move the image further along the A → B path; do not jump to B in early steps
+
 RULES:
-- Each prompt is a standalone image editing instruction
+- Each prompt is a complete image editing instruction for that step only
 - Steps do NOT need to be evenly spaced; cluster more steps where the change is largest or most complex
-- Each prompt must describe the object's ABSOLUTE state at that step
+- Step 1 must stay closest to A; step {n} must be closest to B
+- Each prompt must describe the object's ABSOLUTE target state at that step
   (e.g. "rotated ~30° clockwise from upright" — not "rotate it a bit more")
+- Each step's absolute state must lie between the previous step's state and B
+  (monotonic progression; no backtracking)
+- Each prompt must be achievable as a single edit on the current chained image
 - Use directional and approximate degree language
   (e.g. "facing ~45° to the right", "occupies roughly 60% of the frame", "tilted ~20° forward")
 
@@ -29,7 +38,7 @@ OUTPUT FORMAT (JSON only, no explanation):
     {{
       "step": 1,
       "focus": "<pose | size | angle | combined>",
-      "prompt": "<standalone editing instruction describing absolute state>"
+      "prompt": "<editing instruction for this step; absolute target state on the A→B path>"
     }}
   ]
 }}"""
