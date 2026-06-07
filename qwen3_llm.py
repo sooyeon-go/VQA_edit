@@ -7,10 +7,8 @@ PROMPT_TEMPLATE = """You are an image editing prompt engineer specializing in ob
 
 The SAME object will be transformed step-by-step from state A to state B.
 IMPORTANT: These prompts are applied SEQUENTIALLY. Each prompt edits the
-OUTPUT of the previous step, NOT the original image. So every prompt must
-describe a SMALL change relative to the immediately preceding state.
-
-Below is the visual delta extracted by a VQA model comparing the two images.
+OUTPUT of the previous step, NOT the original image. Each prompt is a SMALL
+change relative to the immediately preceding state.
 
 VISUAL DELTA:
 {vqa_output}
@@ -19,30 +17,37 @@ VISUAL DELTA:
 
 Generate {n} editing prompts that gradually move the object from A toward B.
 
-RULES:
-- Write each prompt in NATURAL, PLAIN language, the way a person would describe
-  a pose or direction. NO precise degrees or percentages.
-  GOOD: "the cat lifts its head slightly", "the cat is now sitting and facing right",
-        "the chair's backrest turns to face forward"
-  BAD:  "rotate the cat 23° clockwise", "scale to 47% of the frame"
-- Each prompt edits the PREVIOUS step's result, so describe only a SMALL step of change
-- The tracked landmark must change direction GRADUALLY and in ONE consistent direction.
-  Never let it jump or reverse. If the landmark goes from facing left to facing right,
-  it must pass through facing-forward in between — do not skip straight across.
-- In EVERY prompt, clearly state the landmark's current direction/pose after this step
-  (e.g. "the cat's head now faces forward")
-- Steps do NOT need to be evenly spaced; add more steps where the change is biggest
-- Keep prompts short and concrete
+CRITICAL DIRECTION RULES:
+- You MUST use explicit directional words in EVERY prompt: "left", "right",
+  "forward" (toward camera), or "away" (back to camera). NEVER use vague words
+  like "to the side", "sideways", or "around" without saying which side.
+- The landmark must move in ONE consistent direction across all steps.
+  Determine the start direction and end direction from the VISUAL DELTA, then
+  move the landmark step by step from start to end, passing through the
+  in-between directions in order. Example ordering for left -> right:
+  facing left -> facing forward -> facing right. NEVER skip or reverse.
+- The "prompt" and "landmark_after" fields MUST agree. The instruction in
+  "prompt" must result in exactly the direction stated in "landmark_after".
+- Each consecutive step's "landmark_after" must show clear progress from the
+  previous step. Two steps must NOT have the same direction.
+
+OTHER RULES:
+- Plain, natural language. No degrees or percentages.
+  GOOD: "the cat turns its head a little further to the right"
+  BAD:  "rotate 30°", "the cat turns to the side"
+- Each prompt edits the PREVIOUS result, so keep each step small.
+- Keep prompts short and concrete.
 
 OUTPUT FORMAT (JSON only, no explanation):
 {{
   "landmark": "<the tracked feature>",
+  "direction_path": "<the full ordered direction sequence, e.g. 'left -> forward -> right'>",
   "prompts": [
     {{
       "step": 1,
       "focus": "<pose | direction | size | combined>",
-      "landmark_after": "<plain description of where the landmark faces/sits after this step>",
-      "prompt": "<short, plain-language editing instruction for this small step>"
+      "landmark_after": "<explicit direction the landmark faces after this step, using left/right/forward/away>",
+      "prompt": "<short instruction using an explicit direction word>"
     }}
   ]
 }}"""
