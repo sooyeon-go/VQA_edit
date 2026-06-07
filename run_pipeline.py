@@ -127,6 +127,40 @@ def save_json(path: Path, data: dict) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def load_rgb_image(path: Path, label: str):
+    from PIL import Image
+
+    if not path.is_file():
+        raise SystemExit(f"{label} not found: {path}")
+    if path.stat().st_size == 0:
+        raise SystemExit(f"{label} is empty: {path}")
+    try:
+        return Image.open(path).convert("RGB")
+    except Exception as exc:
+        raise SystemExit(f"{label} is not a valid image: {path}") from exc
+
+
+def _image_is_readable(path: Path) -> bool:
+    from PIL import Image
+
+    try:
+        if not path.is_file() or path.stat().st_size == 0:
+            return False
+        with Image.open(path) as img:
+            img.verify()
+        return True
+    except Exception:
+        return False
+
+
+def sync_input_image(src: Path, dst: Path, label: str, force: bool = False) -> None:
+    if not src.is_file():
+        raise SystemExit(f"{label} source not found: {src}")
+    if force or not _image_is_readable(dst):
+        shutil.copy2(src, dst)
+    load_rgb_image(dst, label)
+
+
 def free_gpu() -> None:
     gc.collect()
     if torch.cuda.is_available():
@@ -173,12 +207,14 @@ def run_vqa(
     )
     processor = AutoProcessor.from_pretrained(model_path)
 
+    pil_a = load_rgb_image(image_a, "VQA image A")
+    pil_b = load_rgb_image(image_b, "VQA image B")
     messages = [
         {
             "role": "user",
             "content": [
-                {"type": "image", "image": str(image_a)},
-                {"type": "image", "image": str(image_b)},
+                {"type": "image", "image": pil_a},
+                {"type": "image", "image": pil_b},
                 {"type": "text", "text": VQA_PROMPT},
             ],
         }
@@ -438,10 +474,9 @@ def main() -> None:
 
     image_a = inputs_dir / "image_a.png"
     image_b = inputs_dir / "image_b.png"
-    if not image_a.exists():
-        shutil.copy2(args.image_a, image_a)
-    if not image_b.exists():
-        shutil.copy2(args.image_b, image_b)
+    # Always refresh inputs before VQA; stale/corrupt cached copies caused load errors.
+    sync_input_image(args.image_a, image_a, "image A", force=not args.skip_vqa)
+    sync_input_image(args.image_b, image_b, "image B", force=not args.skip_vqa)
 
     vqa_path = out_dir / "vqa_delta.json"
     prompts_path = out_dir / "editing_prompts.json"
