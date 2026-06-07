@@ -23,15 +23,14 @@ DATASET_DIR="${SCRIPT_DIR}/image_dataset"
 OUT_DIR="${SCRIPT_DIR}/out_batch"
 NUM_PROMPTS=5
 NUM_SEEDS=5
-GPU_ID="${GPU_ID:-0}"
+# Comma-separated GPU ids; each GPU runs one job at a time
+GPUS="${GPUS:-0,1,2,3}"
 # ================
-
-export CUDA_VISIBLE_DEVICES="${GPU_ID}"
 
 exec "$PYTHON" "${SCRIPT_DIR}/run_batch.py" \
   --dataset-dir "$DATASET_DIR" \
   --out-dir "$OUT_DIR" \
   -n "$NUM_PROMPTS" \
   --num-seeds "$NUM_SEEDS" \
-  --gpu 0 \
+  --gpus "$GPUS" \
   "$@"
