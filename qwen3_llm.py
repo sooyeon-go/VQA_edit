@@ -5,7 +5,11 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 PROMPT_TEMPLATE = """You are an image editing prompt engineer specializing in object-level visual transitions.
 
-The SAME object transitions from state A to state B.
+The SAME object will be transformed step-by-step from state A to state B.
+IMPORTANT: These prompts are applied SEQUENTIALLY. Each prompt edits the
+OUTPUT of the previous step, NOT the original image. So every prompt must
+describe a SMALL change relative to the immediately preceding state.
+
 Below is the visual delta extracted by a VQA model comparing the two images.
 
 VISUAL DELTA:
@@ -13,23 +17,32 @@ VISUAL DELTA:
 
 ---
 
-Generate {n} editing prompts that progressively move the object from A toward B.
+Generate {n} editing prompts that gradually move the object from A toward B.
 
 RULES:
-- Each prompt is a standalone image editing instruction
-- Steps do NOT need to be evenly spaced; cluster more steps where the change is largest or most complex
-- Each prompt must describe the object's ABSOLUTE state at that step
-  (e.g. "rotated ~30° clockwise from upright" — not "rotate it a bit more")
-- Use directional and approximate degree language
-  (e.g. "facing ~45° to the right", "occupies roughly 60% of the frame", "tilted ~20° forward")
+- Write each prompt in NATURAL, PLAIN language, the way a person would describe
+  a pose or direction. NO precise degrees or percentages.
+  GOOD: "the cat lifts its head slightly", "the cat is now sitting and facing right",
+        "the chair's backrest turns to face forward"
+  BAD:  "rotate the cat 23° clockwise", "scale to 47% of the frame"
+- Each prompt edits the PREVIOUS step's result, so describe only a SMALL step of change
+- The tracked landmark must change direction GRADUALLY and in ONE consistent direction.
+  Never let it jump or reverse. If the landmark goes from facing left to facing right,
+  it must pass through facing-forward in between — do not skip straight across.
+- In EVERY prompt, clearly state the landmark's current direction/pose after this step
+  (e.g. "the cat's head now faces forward")
+- Steps do NOT need to be evenly spaced; add more steps where the change is biggest
+- Keep prompts short and concrete
 
 OUTPUT FORMAT (JSON only, no explanation):
 {{
+  "landmark": "<the tracked feature>",
   "prompts": [
     {{
       "step": 1,
-      "focus": "<pose | size | angle | combined>",
-      "prompt": "<standalone editing instruction describing absolute state>"
+      "focus": "<pose | direction | size | combined>",
+      "landmark_after": "<plain description of where the landmark faces/sits after this step>",
+      "prompt": "<short, plain-language editing instruction for this small step>"
     }}
   ]
 }}"""

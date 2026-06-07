@@ -45,7 +45,7 @@ Environment:
   GPU_ID                 physical GPU id (default: 0)
 
 Example:
-  $(basename "$0") --chain-mode sequential --seed 42
+  $(basename "$0") --seed 42
 EOF
 }
 

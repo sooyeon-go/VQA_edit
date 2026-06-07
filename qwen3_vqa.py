@@ -6,27 +6,28 @@ INTERPOLATION_PROMPT = """You are a precise visual analyst for image interpolati
 You will receive TWO images of the SAME object.
 Image A = start state, Image B = end state.
 
-Compare them and describe ONLY the differences in pose, size, and angle.
+First, pick ONE stable, easily-identifiable landmark feature of the object
+(e.g. for a cat: the head; for a chair: the backrest; for a car: the front).
+This landmark will be tracked across the whole transition.
+
+Then compare the two images and describe the differences in
+landmark direction, pose, size, and angle using NATURAL, PLAIN language.
+Do NOT use precise degrees or percentages. Describe it the way a person would
+casually describe it (e.g. "the cat is sitting and facing right",
+"the chair's backrest faces forward").
 Do NOT describe color, texture, background, or identity.
+
+For landmark direction, use simple words:
+- horizontal: facing left / facing forward / facing right
+- pose: sitting / standing / lying down / head up / head down, etc.
 
 OUTPUT FORMAT (JSON only, no explanation):
 {
   "object_name": "<object>",
-  "pose_change": {
-    "from": "<pose description of A>",
-    "to": "<pose description of B>",
-    "delta": "<what specifically changed and in which direction>"
-  },
-  "size_change": {
-    "from": "<size/frame coverage of A>",
-    "to": "<size/frame coverage of B>",
-    "delta": "<larger/smaller, approximate degree>"
-  },
-  "angle_change": {
-    "from": "<camera angle or object rotation in A>",
-    "to": "<camera angle or object rotation in B>",
-    "delta": "<direction and degree of angular change>"
-  }
+  "landmark": "<the single tracked feature, e.g. 'cat head', 'chair backrest'>",
+  "state_A": "<plain-language description of the object's pose, size, and which way the landmark faces in A>",
+  "state_B": "<plain-language description of the object's pose, size, and which way the landmark faces in B>",
+  "main_changes": "<what changes between A and B, in plain words>"
 }"""
 
 parser = argparse.ArgumentParser(description="Qwen3-VL pose/size/angle diff between two images")

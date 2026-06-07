@@ -23,32 +23,37 @@ VQA_PROMPT = """You are a precise visual analyst for image interpolation.
 You will receive TWO images of the SAME object.
 Image A = start state, Image B = end state.
 
-Compare them and describe ONLY the differences in pose, size, and angle.
+First, pick ONE stable, easily-identifiable landmark feature of the object
+(e.g. for a cat: the head; for a chair: the backrest; for a car: the front).
+This landmark will be tracked across the whole transition.
+
+Then compare the two images and describe the differences in
+landmark direction, pose, size, and angle using NATURAL, PLAIN language.
+Do NOT use precise degrees or percentages. Describe it the way a person would
+casually describe it (e.g. "the cat is sitting and facing right",
+"the chair's backrest faces forward").
 Do NOT describe color, texture, background, or identity.
+
+For landmark direction, use simple words:
+- horizontal: facing left / facing forward / facing right
+- pose: sitting / standing / lying down / head up / head down, etc.
 
 OUTPUT FORMAT (JSON only, no explanation):
 {
   "object_name": "<object>",
-  "pose_change": {
-    "from": "<pose description of A>",
-    "to": "<pose description of B>",
-    "delta": "<what specifically changed and in which direction>"
-  },
-  "size_change": {
-    "from": "<size/frame coverage of A>",
-    "to": "<size/frame coverage of B>",
-    "delta": "<larger/smaller, approximate degree>"
-  },
-  "angle_change": {
-    "from": "<camera angle or object rotation in A>",
-    "to": "<camera angle or object rotation in B>",
-    "delta": "<direction and degree of angular change>"
-  }
+  "landmark": "<the single tracked feature, e.g. 'cat head', 'chair backrest'>",
+  "state_A": "<plain-language description of the object's pose, size, and which way the landmark faces in A>",
+  "state_B": "<plain-language description of the object's pose, size, and which way the landmark faces in B>",
+  "main_changes": "<what changes between A and B, in plain words>"
 }"""
 
 LLM_PROMPT_TEMPLATE = """You are an image editing prompt engineer specializing in object-level visual transitions.
 
-The SAME object transitions from state A to state B.
+The SAME object will be transformed step-by-step from state A to state B.
+IMPORTANT: These prompts are applied SEQUENTIALLY. Each prompt edits the
+OUTPUT of the previous step, NOT the original image. So every prompt must
+describe a SMALL change relative to the immediately preceding state.
+
 Below is the visual delta extracted by a VQA model comparing the two images.
 
 VISUAL DELTA:
@@ -56,23 +61,32 @@ VISUAL DELTA:
 
 ---
 
-Generate {n} editing prompts that progressively move the object from A toward B.
+Generate {n} editing prompts that gradually move the object from A toward B.
 
 RULES:
-- Each prompt is a standalone image editing instruction
-- Steps do NOT need to be evenly spaced; cluster more steps where the change is largest or most complex
-- Each prompt must describe the object's ABSOLUTE state at that step
-  (e.g. "rotated ~30° clockwise from upright" — not "rotate it a bit more")
-- Use directional and approximate degree language
-  (e.g. "facing ~45° to the right", "occupies roughly 60% of the frame", "tilted ~20° forward")
+- Write each prompt in NATURAL, PLAIN language, the way a person would describe
+  a pose or direction. NO precise degrees or percentages.
+  GOOD: "the cat lifts its head slightly", "the cat is now sitting and facing right",
+        "the chair's backrest turns to face forward"
+  BAD:  "rotate the cat 23° clockwise", "scale to 47% of the frame"
+- Each prompt edits the PREVIOUS step's result, so describe only a SMALL step of change
+- The tracked landmark must change direction GRADUALLY and in ONE consistent direction.
+  Never let it jump or reverse. If the landmark goes from facing left to facing right,
+  it must pass through facing-forward in between — do not skip straight across.
+- In EVERY prompt, clearly state the landmark's current direction/pose after this step
+  (e.g. "the cat's head now faces forward")
+- Steps do NOT need to be evenly spaced; add more steps where the change is biggest
+- Keep prompts short and concrete
 
 OUTPUT FORMAT (JSON only, no explanation):
 {{
+  "landmark": "<the tracked feature>",
   "prompts": [
     {{
       "step": 1,
-      "focus": "<pose | size | angle | combined>",
-      "prompt": "<standalone editing instruction describing absolute state>"
+      "focus": "<pose | direction | size | combined>",
+      "landmark_after": "<plain description of where the landmark faces/sits after this step>",
+      "prompt": "<short, plain-language editing instruction for this small step>"
     }}
   ]
 }}"""
@@ -283,7 +297,6 @@ def run_qwen_edit(
     true_cfg_scale: float,
     guidance_scale: float,
     negative_prompt: str,
-    chain_mode: str,
     gpu: int,
 ) -> list[dict]:
     from PIL import Image
@@ -310,20 +323,24 @@ def run_qwen_edit(
 
     steps = load_editing_steps(prompts_data)
     manifest: list[dict] = []
-    current_image = image_a
+    current_image = image_a  # step 1 input = image A; step k>1 input = step k-1 output
 
     for item in steps:
         step_num = int(item.get("step", len(manifest) + 1))
         focus = item.get("focus", "")
+        landmark_after = item.get("landmark_after", "")
         prompt = item.get("prompt", "").strip()
         if not prompt:
             raise ValueError(f"Step {step_num} has empty prompt")
 
-        input_image = image_a if chain_mode == "from_a" else current_image
+        input_image = current_image
         out_name = f"step_{step_num:02d}.png"
         out_path = edits_dir / out_name
 
-        log(f"[3/3] Qwen-Image-Edit: step {step_num}/{len(steps)} ({focus})")
+        log(
+            f"[3/3] Qwen-Image-Edit: step {step_num}/{len(steps)} ({focus}) "
+            f"input={input_image}"
+        )
         pil_image = Image.open(input_image).convert("RGB")
         generator = torch.Generator(device=device).manual_seed(seed + step_num)
 
@@ -344,13 +361,14 @@ def run_qwen_edit(
         entry = {
             "step": step_num,
             "focus": focus,
+            "landmark_after": landmark_after,
             "prompt": prompt,
             "input_image": str(input_image),
             "output_image": str(out_path),
-            "chain_mode": chain_mode,
+            "chain_mode": "sequential",
         }
         manifest.append(entry)
-        current_image = out_path
+        current_image = out_path  # next step uses this output as input
         log(f"      saved: {out_path}")
 
     save_json(edits_dir / "manifest.json", {"steps": manifest})
@@ -392,12 +410,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--true-cfg-scale", type=float, default=4.0)
     parser.add_argument("--guidance-scale", type=float, default=1.0)
     parser.add_argument("--negative-prompt", default=" ")
-    parser.add_argument(
-        "--chain-mode",
-        choices=["sequential", "from_a"],
-        default="sequential",
-        help="sequential: each step uses previous output; from_a: always edit from image A",
-    )
     parser.add_argument(
         "--gpu",
         type=int,
@@ -483,7 +495,6 @@ def main() -> None:
         true_cfg_scale=args.true_cfg_scale,
         guidance_scale=args.guidance_scale,
         negative_prompt=args.negative_prompt,
-        chain_mode=args.chain_mode,
         gpu=args.gpu,
     )
     log(f"Done. Outputs in {out_dir}")

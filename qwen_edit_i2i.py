@@ -35,11 +35,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--true-cfg-scale", type=float, default=4.0)
     parser.add_argument("--guidance-scale", type=float, default=1.0)
     parser.add_argument("--negative-prompt", default=" ")
-    parser.add_argument(
-        "--chain-mode",
-        choices=["sequential", "from_a"],
-        default="sequential",
-    )
     return parser.parse_args()
 
 
@@ -69,7 +64,6 @@ def main() -> None:
         true_cfg_scale=args.true_cfg_scale,
         guidance_scale=args.guidance_scale,
         negative_prompt=args.negative_prompt,
-        chain_mode=args.chain_mode,
         gpu=args.gpu,
     )
 
