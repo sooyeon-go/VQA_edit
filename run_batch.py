@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Batch runner: circular image pairs x multiple seeds (multi-GPU parallel)."""
+"""Batch runner: image pair combinations x multiple seeds (multi-GPU parallel)."""
 
 from __future__ import annotations
 
@@ -52,12 +52,33 @@ def collect_images(dataset_dir: Path) -> list[Path]:
 
 
 def circular_pairs(images: list[Path]) -> list[tuple[Path, Path]]:
+    """Neighbors only: cat_1→cat_2→...→dog_11→cat_1 (16 pairs)."""
     if len(images) < 2:
         return []
     pairs: list[tuple[Path, Path]] = []
     for i in range(len(images)):
         pairs.append((images[i], images[(i + 1) % len(images)]))
     return pairs
+
+
+def all_forward_pairs(images: list[Path]) -> list[tuple[Path, Path]]:
+    """Each image A paired with every later image B in sorted order.
+
+    cat_1→{cat_2..dog_11}, cat_2→{cat_3..dog_11}, ... → n*(n-1)/2 pairs.
+    """
+    pairs: list[tuple[Path, Path]] = []
+    for i, image_a in enumerate(images):
+        for image_b in images[i + 1 :]:
+            pairs.append((image_a, image_b))
+    return pairs
+
+
+def build_pairs(images: list[Path], mode: str) -> list[tuple[Path, Path]]:
+    if mode == "circular":
+        return circular_pairs(images)
+    if mode == "all":
+        return all_forward_pairs(images)
+    raise ValueError(f"unknown pair mode: {mode}")
 
 
 def pair_name(image_a: Path, image_b: Path) -> str:
@@ -223,7 +244,7 @@ def run_sequential(jobs: list, worker, gpus: list[int]) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run VQA+LLM once per pair, then edit with multiple seeds (cat/dog circular pairs)"
+        description="Run VQA+LLM once per pair, then edit with multiple seeds (cat/dog pairs)"
     )
     parser.add_argument(
         "--dataset-dir",
@@ -239,6 +260,16 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default=None,
         help="Comma-separated GPU ids for parallel runs, e.g. 0,1,2,3 (one job per GPU)",
+    )
+    parser.add_argument(
+        "--pair-mode",
+        choices=["all", "circular"],
+        default="all",
+        help=(
+            "Pairing strategy: 'all' = each image with every later image "
+            "(cat_1→cat_2..dog_11, cat_2→cat_3..dog_11, ...); "
+            "'circular' = neighbors only (16 pairs)"
+        ),
     )
     parser.add_argument("--skip-existing", action="store_true", help="Skip pair/seed if edits already exist")
     parser.add_argument(
@@ -277,13 +308,18 @@ def main() -> None:
         raise SystemExit(f"dataset dir not found: {dataset_dir}")
 
     images = collect_images(dataset_dir)
-    pairs = circular_pairs(images)
+    pairs = build_pairs(images, args.pair_mode)
     if not pairs:
         raise SystemExit(f"need at least 2 cat/dog images in {dataset_dir}")
 
+    pair_desc = {
+        "all": "all forward pairs (each image → every later image)",
+        "circular": "circular neighbors only",
+    }[args.pair_mode]
+
     log(f"dataset: {dataset_dir}")
     log(f"images:  {len(images)} (cat+dog, lion excluded)")
-    log(f"pairs:   {len(pairs)} (circular)")
+    log(f"pairs:   {len(pairs)} ({pair_desc})")
     log(f"seeds:   {args.num_seeds} (seed0 .. seed{args.num_seeds - 1})")
     log(f"gpus:    {gpus} ({'sequential' if args.sequential or len(gpus) == 1 else 'parallel'})")
     log(f"out:     {out_base}")

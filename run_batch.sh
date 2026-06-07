@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# cat/dog circular pairs x 5 seeds (seed0 .. seed4)
+# cat/dog all-forward pairs x 5 seeds (seed0 .. seed4)
+# pair-mode: each image A with every later image B (cat_1→cat_2..dog_11, ...)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
