@@ -7,8 +7,8 @@ PROMPT_TEMPLATE = """You are an image editing prompt engineer specializing in ob
 
 The SAME object will be transformed step-by-step from state A to state B.
 IMPORTANT: These prompts are applied SEQUENTIALLY. Each prompt edits the
-OUTPUT of the previous step, NOT the original image. Each prompt is a SMALL
-change relative to the immediately preceding state.
+OUTPUT of the previous step, NOT the original image. Each step is a SMALL
+incremental change relative to the immediately preceding state.
 
 VISUAL DELTA:
 {vqa_output}
@@ -17,37 +17,33 @@ VISUAL DELTA:
 
 Generate {n} editing prompts that gradually move the object from A toward B.
 
-CRITICAL DIRECTION RULES:
-- You MUST use explicit directional words in EVERY prompt: "left", "right",
-  "forward" (toward camera), or "away" (back to camera). NEVER use vague words
-  like "to the side", "sideways", or "around" without saying which side.
-- The landmark must move in ONE consistent direction across all steps.
-  Determine the start direction and end direction from the VISUAL DELTA, then
-  move the landmark step by step from start to end, passing through the
-  in-between directions in order. Example ordering for left -> right:
-  facing left -> facing forward -> facing right. NEVER skip or reverse.
-- The "prompt" and "landmark_after" fields MUST agree. The instruction in
-  "prompt" must result in exactly the direction stated in "landmark_after".
-- Each consecutive step's "landmark_after" must show clear progress from the
-  previous step. Two steps must NOT have the same direction.
-
-OTHER RULES:
-- Plain, natural language. No degrees or percentages.
-  GOOD: "the cat turns its head a little further to the right"
-  BAD:  "rotate 30°", "the cat turns to the side"
-- Each prompt edits the PREVIOUS result, so keep each step small.
-- Keep prompts short and concrete.
+CRITICAL RULES:
+1. DIRECTION: Use explicit words in every prompt — "left", "right", "forward", "away".
+   NEVER use vague terms like "to the side" or "sideways".
+2. CONSISTENCY: The landmark must move in ONE direction only, never jump or reverse.
+   If the landmark goes left -> right, it must pass through forward in between.
+3. AGREEMENT: "prompt" and "landmark_after" MUST describe the same state.
+   The instruction must result in exactly what "landmark_after" states.
+4. PROGRESS: Each step's "pose_after" must show clear progress from the previous step.
+   Two consecutive steps must NOT have the same "pose_after".
+5. LANGUAGE: Plain, natural language only. No degrees or percentages.
+   GOOD: "gently turn the cat's head to the right"
+         "tilt the cat's body slightly to the right"
+         "fully roll the cat onto its side while keeping its head turned right"
+   BAD:  "rotate 30°", "turn to the side"
 
 OUTPUT FORMAT (JSON only, no explanation):
 {{
   "landmark": "<the tracked feature>",
-  "direction_path": "<the full ordered direction sequence, e.g. 'left -> forward -> right'>",
+  "direction_path": "<full ordered direction sequence, e.g. 'forward -> right'>",
   "prompts": [
     {{
       "step": 1,
       "focus": "<pose | direction | size | combined>",
-      "landmark_after": "<explicit direction the landmark faces after this step, using left/right/forward/away>",
-      "prompt": "<short instruction using an explicit direction word>"
+      "landmark_after": "<explicit direction the landmark faces: left/forward/right/away>",
+      "pose_after": "<plain description of body pose after this step>",
+      "progress": "<rough fraction toward B, e.g. '1/{n}', '3/{n}'>",
+      "prompt": "<short, plain-language incremental editing instruction>"
     }}
   ]
 }}"""

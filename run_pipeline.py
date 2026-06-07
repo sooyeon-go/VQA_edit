@@ -25,34 +25,36 @@ Image A = start state, Image B = end state.
 
 First, pick ONE stable, easily-identifiable landmark feature of the object
 (e.g. for a cat: the head; for a chair: the backrest; for a car: the front).
-This landmark will be tracked across the whole transition.
 
-Then compare the two images and describe the differences in
-landmark direction, pose, size, and angle using NATURAL, PLAIN language.
-Do NOT use precise degrees or percentages. Describe it the way a person would
-casually describe it (e.g. "the cat is sitting and facing right",
-"the chair's backrest faces forward").
+Then compare the two images and describe the differences using NATURAL, PLAIN language.
+Do NOT use precise degrees or percentages.
 Do NOT describe color, texture, background, or identity.
 
-For landmark direction, use simple words:
-- horizontal: facing left / facing forward / facing right
-- pose: sitting / standing / lying down / head up / head down, etc.
+For landmark direction, use only these words:
+- horizontal: left / forward / right / away (back to camera)
+- pose: sitting / standing / lying on side / head up / head down / crouching, etc.
 
 OUTPUT FORMAT (JSON only, no explanation):
 {
   "object_name": "<object>",
   "landmark": "<the single tracked feature, e.g. 'cat head', 'chair backrest'>",
-  "state_A": "<plain-language description of the object's pose, size, and which way the landmark faces in A>",
-  "state_B": "<plain-language description of the object's pose, size, and which way the landmark faces in B>",
-  "main_changes": "<what changes between A and B, in plain words>"
+  "state_A": {
+    "landmark_direction": "<which way the landmark faces in A: left/forward/right/away>",
+    "body_pose": "<plain description of the body pose in A>"
+  },
+  "state_B": {
+    "landmark_direction": "<which way the landmark faces in B: left/forward/right/away>",
+    "body_pose": "<plain description of the body pose in B>"
+  },
+  "main_changes": "<what changes between A and B in plain words, mentioning direction explicitly>"
 }"""
 
 LLM_PROMPT_TEMPLATE = """You are an image editing prompt engineer specializing in object-level visual transitions.
 
 The SAME object will be transformed step-by-step from state A to state B.
 IMPORTANT: These prompts are applied SEQUENTIALLY. Each prompt edits the
-OUTPUT of the previous step, NOT the original image. Each prompt is a SMALL
-change relative to the immediately preceding state.
+OUTPUT of the previous step, NOT the original image. Each step is a SMALL
+incremental change relative to the immediately preceding state.
 
 VISUAL DELTA:
 {vqa_output}
@@ -61,37 +63,33 @@ VISUAL DELTA:
 
 Generate {n} editing prompts that gradually move the object from A toward B.
 
-CRITICAL DIRECTION RULES:
-- You MUST use explicit directional words in EVERY prompt: "left", "right",
-  "forward" (toward camera), or "away" (back to camera). NEVER use vague words
-  like "to the side", "sideways", or "around" without saying which side.
-- The landmark must move in ONE consistent direction across all steps.
-  Determine the start direction and end direction from the VISUAL DELTA, then
-  move the landmark step by step from start to end, passing through the
-  in-between directions in order. Example ordering for left -> right:
-  facing left -> facing forward -> facing right. NEVER skip or reverse.
-- The "prompt" and "landmark_after" fields MUST agree. The instruction in
-  "prompt" must result in exactly the direction stated in "landmark_after".
-- Each consecutive step's "landmark_after" must show clear progress from the
-  previous step. Two steps must NOT have the same direction.
-
-OTHER RULES:
-- Plain, natural language. No degrees or percentages.
-  GOOD: "the cat turns its head a little further to the right"
-  BAD:  "rotate 30°", "the cat turns to the side"
-- Each prompt edits the PREVIOUS result, so keep each step small.
-- Keep prompts short and concrete.
+CRITICAL RULES:
+1. DIRECTION: Use explicit words in every prompt — "left", "right", "forward", "away".
+   NEVER use vague terms like "to the side" or "sideways".
+2. CONSISTENCY: The landmark must move in ONE direction only, never jump or reverse.
+   If the landmark goes left -> right, it must pass through forward in between.
+3. AGREEMENT: "prompt" and "landmark_after" MUST describe the same state.
+   The instruction must result in exactly what "landmark_after" states.
+4. PROGRESS: Each step's "pose_after" must show clear progress from the previous step.
+   Two consecutive steps must NOT have the same "pose_after".
+5. LANGUAGE: Plain, natural language only. No degrees or percentages.
+   GOOD: "gently turn the cat's head to the right"
+         "tilt the cat's body slightly to the right"
+         "fully roll the cat onto its side while keeping its head turned right"
+   BAD:  "rotate 30°", "turn to the side"
 
 OUTPUT FORMAT (JSON only, no explanation):
 {{
   "landmark": "<the tracked feature>",
-  "direction_path": "<the full ordered direction sequence, e.g. 'left -> forward -> right'>",
+  "direction_path": "<full ordered direction sequence, e.g. 'forward -> right'>",
   "prompts": [
     {{
       "step": 1,
       "focus": "<pose | direction | size | combined>",
-      "landmark_after": "<explicit direction the landmark faces after this step, using left/right/forward/away>",
-      "prompt": "<short instruction using an explicit direction word>"
+      "landmark_after": "<explicit direction the landmark faces: left/forward/right/away>",
+      "pose_after": "<plain description of body pose after this step>",
+      "progress": "<rough fraction toward B, e.g. '1/{n}', '3/{n}'>",
+      "prompt": "<short, plain-language incremental editing instruction>"
     }}
   ]
 }}"""

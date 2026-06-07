@@ -8,26 +8,28 @@ Image A = start state, Image B = end state.
 
 First, pick ONE stable, easily-identifiable landmark feature of the object
 (e.g. for a cat: the head; for a chair: the backrest; for a car: the front).
-This landmark will be tracked across the whole transition.
 
-Then compare the two images and describe the differences in
-landmark direction, pose, size, and angle using NATURAL, PLAIN language.
-Do NOT use precise degrees or percentages. Describe it the way a person would
-casually describe it (e.g. "the cat is sitting and facing right",
-"the chair's backrest faces forward").
+Then compare the two images and describe the differences using NATURAL, PLAIN language.
+Do NOT use precise degrees or percentages.
 Do NOT describe color, texture, background, or identity.
 
-For landmark direction, use simple words:
-- horizontal: facing left / facing forward / facing right
-- pose: sitting / standing / lying down / head up / head down, etc.
+For landmark direction, use only these words:
+- horizontal: left / forward / right / away (back to camera)
+- pose: sitting / standing / lying on side / head up / head down / crouching, etc.
 
 OUTPUT FORMAT (JSON only, no explanation):
 {
   "object_name": "<object>",
   "landmark": "<the single tracked feature, e.g. 'cat head', 'chair backrest'>",
-  "state_A": "<plain-language description of the object's pose, size, and which way the landmark faces in A>",
-  "state_B": "<plain-language description of the object's pose, size, and which way the landmark faces in B>",
-  "main_changes": "<what changes between A and B, in plain words>"
+  "state_A": {
+    "landmark_direction": "<which way the landmark faces in A: left/forward/right/away>",
+    "body_pose": "<plain description of the body pose in A>"
+  },
+  "state_B": {
+    "landmark_direction": "<which way the landmark faces in B: left/forward/right/away>",
+    "body_pose": "<plain description of the body pose in B>"
+  },
+  "main_changes": "<what changes between A and B in plain words, mentioning direction explicitly>"
 }"""
 
 parser = argparse.ArgumentParser(description="Qwen3-VL pose/size/angle diff between two images")
