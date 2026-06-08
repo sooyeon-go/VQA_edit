@@ -66,27 +66,41 @@ Generate {n} editing prompts that gradually move the object from A toward B.
 CRITICAL RULES:
 1. DIRECTION: Use explicit words in every prompt — "left", "right", "forward", "away".
    NEVER use vague terms like "to the side" or "sideways".
-2. CONSISTENCY: The landmark must move in ONE direction only, never jump or reverse.
-   If the landmark goes left -> right, it must pass through forward in between.
-3. AGREEMENT: "prompt" and "landmark_after" MUST describe the same state.
+
+2. WAYPOINTS: If the landmark needs to cross from one side to the opposite
+   (e.g. right -> left, or away -> forward), it MUST pass through a natural
+   intermediate state first. Do not jump directly across.
+   Required waypoints by transition type:
+   - right -> left : must pass through "facing forward"
+   - left -> right : must pass through "facing forward"
+   - away -> forward : must pass through "facing slightly to one side"
+   - sitting -> lying : must pass through "leaning to the side"
+   Spend at least ONE full step at each waypoint before continuing.
+
+3. CONSISTENCY: The landmark moves in one smooth continuous arc. Never reverse
+   direction. Every step must be closer to B than the previous step.
+
+4. AGREEMENT: "prompt" and "landmark_after" MUST describe the same state.
    The instruction must result in exactly what "landmark_after" states.
-4. PROGRESS: Each step's "pose_after" must show clear progress from the previous step.
-   Two consecutive steps must NOT have the same "pose_after".
-5. LANGUAGE: Plain, natural language only. No degrees or percentages.
-   GOOD: "gently turn the cat's head to the right"
-         "tilt the cat's body slightly to the right"
-         "fully roll the cat onto its side while keeping its head turned right"
+
+5. PROGRESS: Each step's "pose_after" must show clear progress from the previous
+   step. Two consecutive steps must NOT have the same "pose_after".
+
+6. LANGUAGE: Plain, natural language only. No degrees or percentages.
+   GOOD: "the cat's head now faces forward"
+         "the cat settles into a forward-facing sit"
+         "the cat's head begins to turn toward the left"
    BAD:  "rotate 30°", "turn to the side"
 
 OUTPUT FORMAT (JSON only, no explanation):
 {{
   "landmark": "<the tracked feature>",
-  "direction_path": "<full ordered direction sequence, e.g. 'forward -> right'>",
+  "direction_path": "<full ordered path including waypoints, e.g. 'right -> forward -> left'>",
   "prompts": [
     {{
       "step": 1,
       "focus": "<pose | direction | size | combined>",
-      "landmark_after": "<explicit direction the landmark faces: left/forward/right/away>",
+      "landmark_after": "<explicit direction: left/forward/right/away>",
       "pose_after": "<plain description of body pose after this step>",
       "progress": "<rough fraction toward B, e.g. '1/{n}', '3/{n}'>",
       "prompt": "<short, plain-language incremental editing instruction>"

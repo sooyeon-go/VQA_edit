@@ -21,7 +21,7 @@ fi
 
 # ===== 설정 =====
 DATASET_DIR="${SCRIPT_DIR}/image_dataset"
-OUT_DIR="${SCRIPT_DIR}/out_batch2"
+OUT_DIR="${SCRIPT_DIR}/out_batch3"
 NUM_PROMPTS=5
 NUM_SEEDS=5
 # Comma-separated GPU ids; each GPU runs one job at a time
