@@ -15,7 +15,10 @@ from PIL import Image
 from run_pipeline import QWEN_EDIT_MODEL, log, require_edit_model_dir, save_json
 
 DEFAULT_PROMPT_YAML = Path(
-    "/mnt/sy/VIVA_project/VIVA/data/sy_prompt/prompt.yaml"
+    "/data/shared-vilab/datasets/mj_data/example/sy_prompt/prompt.yaml"
+)
+DEFAULT_VIDEO_DIR = Path(
+    "/data/shared-vilab/datasets/mj_data/example/sy_example/video"
 )
 
 
@@ -28,6 +31,12 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=DEFAULT_PROMPT_YAML,
         help="YAML with instruction / src_video / ref_img entries",
+    )
+    parser.add_argument(
+        "--video-dir",
+        type=Path,
+        default=DEFAULT_VIDEO_DIR,
+        help="Directory containing source videos (e.g. 0.mp4, 1.mp4)",
     )
     parser.add_argument(
         "--out-dir",
@@ -47,7 +56,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_prompt_entries(prompt_yaml: Path) -> list[dict]:
+def load_prompt_entries(prompt_yaml: Path, video_dir: Path | None = None) -> list[dict]:
     try:
         import yaml
     except ImportError as exc:
@@ -70,7 +79,10 @@ def load_prompt_entries(prompt_yaml: Path) -> list[dict]:
         if not instruction or not src_video:
             raise SystemExit(f"entry {idx} missing instruction or src_video")
 
-        video_path = (yaml_dir / src_video).resolve()
+        if video_dir is not None:
+            video_path = (video_dir / Path(src_video).name).resolve()
+        else:
+            video_path = (yaml_dir / src_video).resolve()
         ref_img = str(item.get("ref_img", "")).strip()
         ref_path = (yaml_dir / ref_img).resolve() if ref_img else None
         entries.append(
@@ -182,11 +194,13 @@ def main() -> None:
     out_dir = args.out_dir.resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    entries = load_prompt_entries(prompt_yaml)
+    video_dir = args.video_dir.resolve()
+    entries = load_prompt_entries(prompt_yaml, video_dir=video_dir)
     if args.limit > 0:
         entries = entries[: args.limit]
 
     log(f"prompt yaml: {prompt_yaml}")
+    log(f"video dir:   {video_dir}")
     log(f"entries:     {len(entries)}")
     log(f"out:         {out_dir}")
 
